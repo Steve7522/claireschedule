@@ -3,13 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>女兒生活作息表 - 甜蜜共編版</title>
+    <title>女兒生活作息表 - 專業修復版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // 1. Firebase 配置 (妳提供的內容)
         const firebaseConfig = {
             apiKey: "AIzaSyAxKJzfHeN2c3jD7nGCfUZdgXu5kk2vWd4",
             authDomain: "schedule-3f1fd.firebaseapp.com",
@@ -22,12 +21,11 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // --- 安全機制：從瀏覽器儲存空間取得 OpenAI Key ---
         let OPENAI_KEY = localStorage.getItem('user_openai_key');
 
         function checkAndPromptKey() {
             if (!OPENAI_KEY || OPENAI_KEY.length < 10) {
-                const input = prompt("【安全提示】請輸入您的新 OpenAI API Key (sk-...)：\n這組 Key 會安全地存在您的瀏覽器中，不會被 GitHub 偵測到。");
+                const input = prompt("請輸入您的 OpenAI API Key (sk-...)：");
                 if (input) {
                     OPENAI_KEY = input.trim();
                     localStorage.setItem('user_openai_key', OPENAI_KEY);
@@ -35,17 +33,15 @@
             }
         }
 
-        // 重設 Key 的按鈕邏輯
         window.resetKey = function() {
             localStorage.removeItem('user_openai_key');
-            alert("API Key 已清除。重新整理頁面後，您可以輸入新的 Key。");
+            alert("Key 已清除，請重新整理頁面。");
             location.reload();
         };
 
         const dateInput = document.getElementById('datePicker');
-        dateInput.valueAsDate = new Date(); // 預設顯示今天
+        dateInput.valueAsDate = new Date();
 
-        // 讀取 Firebase 資料
         async function loadSchedule() {
             const date = dateInput.value;
             const docRef = doc(db, "schedules", date);
@@ -56,21 +52,18 @@
             if (docSnap.exists()) {
                 docSnap.data().items.forEach(item => addRow(item));
             } else {
-                // 如果當天沒資料，顯示三行空的
                 addRow({ time: '08:00', task: '起床洗漱', status: '尚未開始', url: '' });
                 addRow({ time: '12:00', task: '午餐時間', status: '尚未開始', url: '' });
-                addRow({ time: '20:00', task: '睡前故事', status: '尚未開始', url: '' });
             }
         }
 
-        // 新增一行表格
         window.addRow = function(data = { time: '', task: '', status: '尚未開始', url: '' }) {
             const tbody = document.getElementById('scheduleBody');
             const row = document.createElement('tr');
             row.className = "border-b border-pink-100 hover:bg-pink-50 transition";
             row.innerHTML = `
                 <td class="p-3"><input type="time" class="border rounded-lg p-1 w-full time-input" value="${data.time}"></td>
-                <td class="p-3"><input type="text" class="border rounded-lg p-1 w-full task-input" value="${data.task}" placeholder="輸入行程"></td>
+                <td class="p-3"><input type="text" class="border rounded-lg p-1 w-full task-input" value="${data.task}"></td>
                 <td class="p-3">
                     <select class="border rounded-lg p-1 w-full status-input">
                         <option ${data.status === '完美達成' ? 'selected' : ''}>完美達成</option>
@@ -81,7 +74,7 @@
                 </td>
                 <td class="p-3 text-center">
                     <div class="flex flex-col items-center gap-1">
-                        <a href="${data.url}" target="_blank" class="text-blue-500 font-bold text-xs underline decoration-blue-200">${data.url ? '▶️ 播放影片' : ''}</a>
+                        <a href="${data.url}" target="_blank" class="text-blue-500 font-bold text-xs underline ${data.url ? '' : 'hidden'}" id="link-display">▶️ 播放影片</a>
                         <button onclick="getAIResource(this)" class="bg-pink-100 text-pink-500 px-3 py-1 rounded-full text-xs hover:bg-pink-200 font-bold transition">AI 找連結</button>
                     </div>
                 </td>
@@ -89,7 +82,6 @@
             tbody.appendChild(row);
         }
 
-        // 儲存資料
         window.saveData = async function() {
             const date = dateInput.value;
             const rows = document.querySelectorAll('#scheduleBody tr');
@@ -97,25 +89,23 @@
                 time: row.querySelector('.time-input').value,
                 task: row.querySelector('.task-input').value,
                 status: row.querySelector('.status-input').value,
-                url: row.querySelector('a').href || ''
+                url: row.querySelector('a').href.startsWith('http') ? row.querySelector('a').href : ''
             }));
 
             try {
                 await setDoc(doc(db, "schedules", date), { items });
-                alert('🌸 資料已同步更新！太太那邊重新整理後就能看到囉。');
-            } catch (e) {
-                alert('儲存失敗：' + e.message);
-            }
+                alert('🌸 資料已同步！');
+            } catch (e) { alert('儲存失敗：' + e.message); }
         }
 
-        // AI 找連結功能 (透過 Proxy 解決 CORS 並使用暫存的 Key)
+        // --- 核心優化：更精準的 AI 網址抓取 ---
         window.getAIResource = async function(btn) {
-            checkAndPromptKey(); // 點擊時再次確認有沒有 Key
+            checkAndPromptKey();
             if (!OPENAI_KEY) return;
 
             const taskInput = btn.closest('tr').querySelector('.task-input');
             const taskName = taskInput.value;
-            if(!taskName) return alert('請先輸入活動內容');
+            if(!taskName) return alert('請先輸入行程內容');
             
             btn.innerText = "⏳...";
             btn.disabled = true;
@@ -132,22 +122,35 @@
                     },
                     body: JSON.stringify({
                         model: "gpt-3.5-turbo",
-                        messages: [{role: "user", content: `請給一個適合小孩看關於「${taskName}」的 YouTube 影片連結。請只給我網址，不要說任何廢話。`}],
-                        temperature: 0.5
+                        messages: [{
+                            role: "user", 
+                            content: `請給我一個適合小孩觀看、關於「${taskName}」的 YouTube 影片網址。規則：只准回傳以 https 開頭的網址，不准有任何其他字元、括號或文字說明。`
+                        }],
+                        temperature: 0.3 // 調低隨機性，讓它更聽話
                     })
                 });
 
                 const result = await response.json();
                 if (result.error) throw new Error(result.error.message);
 
-                const url = result.choices[0].message.content.trim();
-                const linkElem = btn.previousElementSibling;
-                linkElem.href = url;
-                linkElem.innerText = "▶️ 播放影片";
-                alert('AI 成功找到建議影片！');
+                let rawContent = result.choices[0].message.content.trim();
+                
+                // 【重點】使用正規表達式只提取 http 開始的網址，過濾掉括號、引號等雜質
+                const urlMatch = rawContent.match(/https?:\/\/[^\s)\]"']+/);
+                
+                if (urlMatch) {
+                    const cleanUrl = urlMatch[0];
+                    const linkElem = btn.parentElement.querySelector('a');
+                    linkElem.href = cleanUrl;
+                    linkElem.innerText = "▶️ 播放影片";
+                    linkElem.classList.remove('hidden');
+                    alert('已找到正確連結！按儲存後即可同步。');
+                } else {
+                    alert('AI 雖然回傳了，但格式不對：' + rawContent);
+                }
 
             } catch (e) {
-                alert('AI 搜尋失敗：' + e.message + '\n\n如果是 Key 的問題，可以點最下方重設 Key。');
+                alert('AI 搜尋失敗：' + e.message);
             } finally {
                 btn.innerText = "AI 找連結";
                 btn.disabled = false;
@@ -158,51 +161,41 @@
         window.onload = () => { loadSchedule(); };
     </script>
 </head>
-<body class="bg-[#FFF0F5] min-h-screen p-4 sm:p-10 font-sans">
+<body class="bg-[#FFF0F5] min-h-screen p-4 sm:p-10">
 
-    <div class="max-w-4xl mx-auto bg-white p-6 sm:p-10 rounded-[3rem] shadow-[0_20px_50px_rgba(255,192,203,0.3)] border-8 border-pink-100">
-        
+    <div class="max-w-4xl mx-auto bg-white p-6 sm:p-10 rounded-[3rem] shadow-xl border-8 border-pink-100">
         <header class="text-center mb-10">
-            <h1 class="text-4xl font-black text-pink-400 mb-2 drop-shadow-sm">🌸 女兒生活作息表 🌸</h1>
-            <div class="w-24 h-1 bg-pink-200 mx-auto rounded-full"></div>
+            <h1 class="text-4xl font-black text-pink-400 mb-2">🌸 女兒生活作息表 🌸</h1>
+            <p class="text-pink-300 text-sm italic underline cursor-pointer" onclick="resetKey()">[ 點此重設 API Key ]</p>
         </header>
         
         <div class="flex flex-col sm:flex-row items-end justify-between mb-8 gap-4">
             <div class="w-full sm:w-auto">
                 <label class="block text-pink-400 font-bold mb-2 ml-2 text-sm">🗓️ 選擇日期</label>
-                <input type="date" id="datePicker" class="w-full border-2 border-pink-100 rounded-2xl px-5 py-3 focus:border-pink-300 focus:outline-none text-gray-600 shadow-sm bg-pink-50/30">
+                <input type="date" id="datePicker" class="w-full border-2 border-pink-100 rounded-2xl px-5 py-3 focus:border-pink-300 focus:outline-none bg-pink-50/30">
             </div>
             <button onclick="addRow()" class="w-full sm:w-auto bg-pink-300 text-white px-8 py-4 rounded-2xl hover:bg-pink-400 font-black shadow-md transition-all active:scale-95">
-                ＋ 新增行程項目
+                ＋ 新增行程
             </button>
         </div>
 
-        <div class="overflow-hidden rounded-3xl border-2 border-pink-50 shadow-sm mb-10">
-            <table class="w-full text-left border-collapse">
+        <div class="overflow-hidden rounded-3xl border-2 border-pink-50 shadow-sm mb-10 text-sm">
+            <table class="w-full text-left">
                 <thead class="bg-pink-400 text-white">
                     <tr>
-                        <th class="p-4 font-bold text-sm uppercase tracking-wider">時間</th>
-                        <th class="p-4 font-bold text-sm uppercase tracking-wider">活動項目</th>
-                        <th class="p-4 font-bold text-sm uppercase tracking-wider text-center">達成率</th>
-                        <th class="p-4 font-bold text-sm uppercase tracking-wider text-center">AI 資源</th>
+                        <th class="p-4 w-24">時間</th>
+                        <th class="p-4">項目</th>
+                        <th class="p-4 w-28 text-center">達成</th>
+                        <th class="p-4 w-32 text-center">資源</th>
                     </tr>
                 </thead>
-                <tbody id="scheduleBody" class="divide-y divide-pink-50 text-gray-600">
-                    </tbody>
+                <tbody id="scheduleBody" class="divide-y divide-pink-50"></tbody>
             </table>
         </div>
 
-        <div class="space-y-4">
-            <button onclick="saveData()" class="w-full bg-gradient-to-r from-green-400 to-green-500 text-white py-5 rounded-3xl text-2xl font-black hover:shadow-lg hover:from-green-500 hover:to-green-600 transition-all active:scale-[0.98] shadow-green-100">
-                ☁️ 儲存並同步給太太
-            </button>
-            
-            <div class="flex justify-center items-center gap-4 text-xs text-gray-300 pt-4">
-                <button onclick="resetKey()" class="hover:text-pink-400 underline">重設 OpenAI Key</button>
-                <span>|</span>
-                <p>資料加密儲存於雲端 Firebase</p>
-            </div>
-        </div>
+        <button onclick="saveData()" class="w-full bg-gradient-to-r from-green-400 to-green-500 text-white py-5 rounded-3xl text-2xl font-black hover:shadow-lg transition-all active:scale-[0.98]">
+            ☁️ 儲存並同步給太太
+        </button>
     </div>
 
 </body>
