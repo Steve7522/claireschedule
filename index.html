@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>女兒成長導師 v6.5 - 書單同步與找片強化版</title>
+    <title>女兒成長導師 v7.0 - 獨立書單搜尋版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
@@ -48,16 +48,23 @@
             }
         }
 
-        window.addRow = function(data = { time: '', task: '', status: '尚未開始', url: '' }) {
+        window.addRow = function(data = { time: '', task: '', status: '尚未開始', url: '', books: [] }) {
             const tbody = document.getElementById('scheduleBody');
             const row = document.createElement('tr');
             row.className = "border-b border-pink-100 hover:bg-pink-50 transition text-[11px] sm:text-xs";
+            
+            // 建立書單按鈕 HTML
+            const booksHtml = (data.books || []).map(book => 
+                `<button onclick="searchBookOnYoutube('${book}')" class="bg-blue-50 text-blue-600 px-2 py-0.5 rounded border border-blue-100 hover:bg-blue-100 transition truncate max-w-[120px]">📖 ${book}</button>`
+            ).join(' ');
+
             row.innerHTML = `
                 <td class="p-2 sm:p-3 text-center"><input type="time" class="border rounded-lg p-1 w-full time-input shadow-sm" value="${data.time}"></td>
                 <td class="p-2 sm:p-3">
                     <input type="text" class="border rounded-lg p-1 w-full task-input shadow-sm mb-1 font-medium" value="${data.task}">
+                    <div class="flex flex-wrap gap-1 mb-1 book-container">${booksHtml}</div>
                     <div class="flex gap-2">
-                        <button onclick="getActivityGuide(this)" class="text-[9px] bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full hover:bg-orange-200 transition font-bold">💡 育兒指南 & 書單</button>
+                        <button onclick="getActivityGuide(this)" class="text-[9px] bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full hover:bg-orange-200 transition font-bold">💡 獲取建議與書單</button>
                     </div>
                 </td>
                 <td class="p-2 sm:p-3 text-center">
@@ -78,15 +85,24 @@
             tbody.appendChild(row);
         }
 
-        // --- 優化功能：育兒指南 + 自動提取書單到計畫內容 ---
+        // 搜尋書目功能
+        window.searchBookOnYoutube = function(bookName) {
+            const age = ageSelect.value;
+            const query = encodeURIComponent(`${age} ${bookName}`);
+            window.open(`https://www.youtube.com/results?search_query=${query}`, '_blank');
+        }
+
+        // --- 獲取建議並生成獨立書單按鈕 ---
         window.getActivityGuide = async function(btn) {
             checkKey();
             const taskInput = btn.closest('td').querySelector('.task-input');
+            const bookContainer = btn.closest('td').querySelector('.book-container');
             const taskName = taskInput.value;
             const guideBox = document.getElementById('guideBox');
             const guideContent = document.getElementById('guideContent');
+            
             guideBox.classList.remove('hidden');
-            guideContent.innerHTML = `🧙 AI 正在思考 ${ageSelect.value} 的專屬書單與計畫...`;
+            guideContent.innerHTML = `🧙 AI 正在為 ${ageSelect.value} 寶貝挑選合適書單...`;
 
             try {
                 const proxyUrl = 'https://corsproxy.io/?';
@@ -98,8 +114,8 @@
                         model: "gpt-3.5-turbo",
                         messages: [{
                             role: "user", 
-                            content: `針對 ${ageSelect.value} 孩子進行「${taskName}」，請提供：1.互動遊戲 2.練習任務 3.推薦繪本/書籍。
-                            請注意：推薦書名請用《》括起來。`
+                            content: `針對 ${ageSelect.value} 孩子進行「${taskName}」，請提供：1.互動遊戲 2.練習任務 3.推薦三本具體的繪本或書籍名稱。
+                            注意：書名請嚴格使用《》包起來，例如《書名》。`
                         }]
                     })
                 });
@@ -107,16 +123,23 @@
                 const content = result.choices[0].message.content;
                 guideContent.innerHTML = content.replace(/\n/g, '<br>');
                 
-                // 提取書名並更新到任務欄位
-                const bookMatches = content.match(/《[^》]+》/g);
-                if (bookMatches && !taskInput.value.includes('推薦書單')) {
-                    const books = bookMatches.slice(0, 2).join(', ');
-                    taskInput.value += ` (推薦書單: ${books})`;
+                // 提取書名並建立按鈕
+                const bookMatches = content.match(/《([^》]+)》/g);
+                if (bookMatches) {
+                    bookContainer.innerHTML = ''; // 清空舊的
+                    bookMatches.forEach(fullBookName => {
+                        const pureName = fullBookName.replace(/[《》]/g, '');
+                        const bookBtn = document.createElement('button');
+                        bookBtn.className = "bg-blue-50 text-blue-600 px-2 py-0.5 rounded border border-blue-100 hover:bg-blue-100 transition truncate max-w-[120px]";
+                        bookBtn.innerHTML = `📖 ${pureName}`;
+                        bookBtn.onclick = () => searchBookOnYoutube(pureName);
+                        bookContainer.appendChild(bookBtn);
+                    });
                 }
             } catch (e) { guideContent.innerHTML = "讀取指南失敗。"; }
         }
 
-        // --- 優化功能：AI 找片 (強制回傳連結，找不到就給搜尋連結) ---
+        // --- AI 找片：邏輯改回 年紀 + 計畫內容 ---
         window.getAIResource = async function(btn) {
             checkKey();
             const row = btn.closest('tr');
@@ -124,6 +147,8 @@
             const age = ageSelect.value;
             
             btn.innerText = "⏳";
+            const searchQuery = encodeURIComponent(`${age} ${taskName}`);
+            
             try {
                 const proxyUrl = 'https://corsproxy.io/?';
                 const apiUrl = 'https://api.openai.com/v1/chat/completions';
@@ -134,41 +159,48 @@
                         model: "gpt-3.5-turbo",
                         messages: [{
                             role: "user", 
-                            content: `請提供一個適合 ${age} 小孩看關於「${taskName}」的具體 YouTube 影片網址。
-                            如果妳不知道具體網址，請直接回傳這個 YouTube 搜尋連結：https://www.youtube.com/results?search_query=${encodeURIComponent(age + " " + taskName)}
-                            規則：只准回傳網址，不准說任何其他廢話。`
-                        }],
-                        temperature: 0.2
+                            content: `請幫我找一個適合 ${age} 小孩關於「${taskName}」的 YouTube 影片連結。
+                            如果找不到精確網址，請直接回傳此搜尋連結：https://www.youtube.com/results?search_query=${searchQuery}
+                            規則：只給網址。`
+                        }]
                     })
                 });
                 const result = await response.json();
-                const rawUrl = result.choices[0].message.content.trim();
-                const urlMatch = rawUrl.match(/https?:\/\/[^\s]+/);
-                
+                const urlMatch = result.choices[0].message.content.match(/https?:\/\/[^\s]+/);
                 const linkElem = btn.parentElement.querySelector('a');
-                if (urlMatch) {
-                    linkElem.href = urlMatch[0];
-                } else {
-                    // 如果 AI 還是不聽話，前端強制生成搜尋連結
-                    linkElem.href = `https://www.youtube.com/results?search_query=${encodeURIComponent(age + " " + taskName)}`;
-                }
+                linkElem.href = urlMatch ? urlMatch[0] : `https://www.youtube.com/results?search_query=${searchQuery}`;
                 linkElem.innerText = "▶️ 播放影片";
                 linkElem.classList.remove('hidden');
-            } catch (e) { 
-                alert("找片出錯，已為您準備搜尋連結。");
+            } catch (e) {
                 const linkElem = btn.parentElement.querySelector('a');
-                linkElem.href = `https://www.youtube.com/results?search_query=${encodeURIComponent(age + " " + taskName)}`;
+                linkElem.href = `https://www.youtube.com/results?search_query=${searchQuery}`;
                 linkElem.classList.remove('hidden');
             }
             btn.innerText = "AI 找片";
         }
 
-        // --- 原有排程功能保持不變 ---
+        // --- 儲存時也要存下書單 ---
+        window.saveData = async function() {
+            const date = dateInput.value;
+            const rows = document.querySelectorAll('#scheduleBody tr');
+            const items = Array.from(rows).map(row => {
+                const t = row.querySelector('.time-input');
+                const k = row.querySelector('.task-input');
+                const bBtns = row.querySelectorAll('.book-container button');
+                const books = Array.from(bBtns).map(b => b.innerText.replace('📖 ', ''));
+                if(!t || !k) return null;
+                return { time: t.value, task: k.value, status: row.querySelector('.status-input').value, url: row.querySelector('a').href, books: books };
+            }).filter(i => i && i.task);
+            await setDoc(doc(db, "schedules", date), { items });
+            alert('💾 儲存成功！書單也已同步。');
+        }
+
+        // --- 其他排程功能保持 ---
         window.generateDailyPlan = async function(mode) {
             checkKey();
             const btn = event.target;
             const originalText = btn.innerText;
-            btn.innerText = "⏳ 重新規劃中...";
+            btn.innerText = "⏳ 規劃中...";
             const rows = document.querySelectorAll('#scheduleBody tr');
             const existingTasks = Array.from(rows).map(row => row.querySelector('.task-input')?.value).filter(v => v && !v.includes("等待安排"));
 
@@ -182,7 +214,7 @@
                         model: "gpt-3.5-turbo",
                         messages: [{
                             role: "user", 
-                            content: `對 ${ageSelect.value} 孩子，已有行程：${existingTasks.join(', ')}。請追加 2 個「${mode}」活動並重新排序。格式：時間|活動。`
+                            content: `規劃 ${ageSelect.value} 行程。已有：${existingTasks.join(', ')}。追加 2 個「${mode}」並重排。格式：時間|活動。`
                         }]
                     })
                 });
@@ -195,7 +227,7 @@
                     return { time: (time||"").trim(), task: (task||"").trim() };
                 }).filter(i => i.time && i.task);
                 newItems.sort((a, b) => a.time.localeCompare(b.time));
-                newItems.forEach(item => addRow({ ...item, status: '尚未開始', url: '' }));
+                newItems.forEach(item => addRow({ ...item, status: '尚未開始', url: '', books: [] }));
             } catch (e) { alert(e.message); }
             btn.innerText = originalText;
         }
@@ -204,7 +236,7 @@
             const cache = localStorage.getItem('weekly_plan_cache');
             const tbody = document.getElementById('scheduleBody');
             tbody.innerHTML = '';
-            if(!cache) { addRow({ time: '09:00', task: '點擊按鈕開始規劃', status: '尚未開始', url: '' }); return; }
+            if(!cache) { addRow({ time: '09:00', task: '點擊按鈕開始規劃', status: '尚未開始', url: '', books: [] }); return; }
             const dateObj = new Date(dateInput.value);
             const weekDays = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
             const currentDayName = weekDays[dateObj.getDay()];
@@ -212,21 +244,8 @@
             const dayLine = lines.find(l => l.includes(currentDayName));
             if(dayLine) {
                 const parts = dayLine.split('|');
-                for(let i=1; i<parts.length; i+=2) if(parts[i] && parts[i+1]) addRow({ time: parts[i], task: parts[i+1], status: '尚未開始', url: '' });
-            } else { addRow({ time: '09:00', task: '點擊追加建議來安排這天', status: '尚未開始', url: '' }); }
-        }
-
-        window.saveData = async function() {
-            const date = dateInput.value;
-            const rows = document.querySelectorAll('#scheduleBody tr');
-            const items = Array.from(rows).map(row => {
-                const t = row.querySelector('.time-input');
-                const k = row.querySelector('.task-input');
-                if(!t || !k) return null;
-                return { time: t.value, task: k.value, status: row.querySelector('.status-input').value, url: row.querySelector('a').href };
-            }).filter(i => i && i.task);
-            await setDoc(doc(db, "schedules", date), { items });
-            alert('💾 儲存成功！');
+                for(let i=1; i<parts.length; i+=2) if(parts[i] && parts[i+1]) addRow({ time: parts[i], task: parts[i+1], status: '尚未開始', url: '', books: [] });
+            } else { addRow({ time: '09:00', task: '點擊追加建議來安排這天', status: '尚未開始', url: '', books: [] }); }
         }
 
         dateInput.addEventListener('change', loadSchedule);
@@ -236,7 +255,7 @@
 <body class="bg-[#FFF5F7] min-h-screen p-4 sm:p-6 pb-20 font-sans">
     <div class="max-w-4xl mx-auto bg-white p-6 rounded-[3rem] shadow-2xl border-4 border-pink-200">
         <header class="text-center mb-6">
-            <h1 class="text-3xl font-black text-pink-500 mb-4 tracking-tight text-stroke">🌸 成長導師 v6.5</h1>
+            <h1 class="text-3xl font-black text-pink-500 mb-4 tracking-tight">🌸 成長導師 v7.0</h1>
             <div class="flex flex-wrap justify-center gap-3 mb-4">
                 <div class="bg-pink-50 px-4 py-2 rounded-2xl flex items-center border border-pink-100 shadow-sm">
                     <label class="text-pink-600 font-bold text-xs mr-2">年齡：</label>
@@ -246,17 +265,17 @@
                         <option value="5歲">5 歲</option><option value="6歲+">6 歲+</option>
                     </select>
                 </div>
-                <button onclick="localStorage.removeItem('weekly_plan_cache'); generateWeeklyPlan();" class="bg-indigo-500 text-white px-5 py-2 rounded-2xl text-xs font-bold shadow-lg hover:bg-indigo-600 transition">📅 重建本週大綱</button>
+                <button onclick="localStorage.removeItem('weekly_plan_cache'); generateDailyPlan('綜合活動');" class="bg-indigo-500 text-white px-5 py-2 rounded-2xl text-xs font-bold shadow-lg hover:bg-indigo-600 transition">📅 重建本日大綱</button>
             </div>
             <div class="flex justify-center gap-2">
-                <button onclick="generateDailyPlan('雙語生活')" class="bg-blue-400 text-white px-4 py-2 rounded-full text-xs font-bold hover:bg-blue-500 shadow-md">🎧 追加雙語並重排</button>
-                <button onclick="generateDailyPlan('邏輯思考')" class="bg-purple-400 text-white px-4 py-2 rounded-full text-xs font-bold hover:bg-purple-500 shadow-md">🧠 追加邏輯並重排</button>
+                <button onclick="generateDailyPlan('雙語生活')" class="bg-blue-400 text-white px-4 py-2 rounded-full text-xs font-bold shadow-md">🎧 追加雙語並重排</button>
+                <button onclick="generateDailyPlan('邏輯思考')" class="bg-purple-400 text-white px-4 py-2 rounded-full text-xs font-bold shadow-md">🧠 追加邏輯並重排</button>
             </div>
         </header>
 
         <div id="guideBox" class="hidden mb-6 p-5 bg-orange-50 border-2 border-orange-100 rounded-[2rem] relative shadow-inner">
             <button onclick="document.getElementById('guideBox').classList.add('hidden')" class="absolute top-4 right-5 text-orange-300 font-black">✕</button>
-            <h3 class="font-bold text-orange-600 mb-2 text-sm italic">✨ 育兒指南 & 專屬書單</h3>
+            <h3 class="font-bold text-orange-600 mb-2 text-sm italic">✨ 育兒指南內容</h3>
             <div id="guideContent" class="text-xs text-gray-700 leading-relaxed space-y-2"></div>
         </div>
         
@@ -273,7 +292,7 @@
                 <thead class="bg-pink-400 text-white text-[10px] uppercase tracking-widest text-center">
                     <tr>
                         <th class="p-4 w-24 sm:w-32">時間</th>
-                        <th class="p-4 text-left">計畫內容 (含 AI 書單)</th>
+                        <th class="p-4 text-left">計畫內容與書單</th>
                         <th class="p-4 w-28">執行狀況</th>
                         <th class="p-4 w-20">影片資源</th>
                     </tr>
