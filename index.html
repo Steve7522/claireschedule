@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>女兒成長導師 - 智慧作息版</title>
+    <title>女兒成長導師 v4.0 - 分齡智慧版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
@@ -26,11 +26,12 @@
         function checkKey() {
             if (!OPENAI_KEY) {
                 OPENAI_KEY = prompt("請輸入您的 OpenAI API Key：");
-                if (OPENAI_KEY) localStorage.setItem('user_openai_key', OPENAI_KEY);
+                if (OPENAI_KEY) localStorage.setItem('user_openai_key', OPENAI_KEY.trim());
             }
         }
 
         const dateInput = document.getElementById('datePicker');
+        const ageSelect = document.getElementById('ageSelect');
         dateInput.valueAsDate = new Date();
 
         async function loadSchedule() {
@@ -54,7 +55,7 @@
                 <td class="p-3"><input type="time" class="border rounded-lg p-1 w-full time-input shadow-sm" value="${data.time}"></td>
                 <td class="p-3">
                     <input type="text" class="border rounded-lg p-1 w-full task-input shadow-sm mb-1" value="${data.task}">
-                    <button onclick="getActivityGuide(this)" class="text-[10px] bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full hover:bg-orange-200 transition">💡 育兒指南</button>
+                    <button onclick="getActivityGuide(this)" class="text-[10px] bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full hover:bg-orange-200 transition font-bold">💡 育兒指南</button>
                 </td>
                 <td class="p-3">
                     <select class="border rounded-lg p-1 w-full status-input shadow-sm text-xs">
@@ -67,23 +68,24 @@
                 <td class="p-3 text-center">
                     <div class="flex flex-col items-center gap-1">
                         <a href="${data.url}" target="_blank" class="text-blue-500 font-bold text-[10px] underline ${data.url ? '' : 'hidden'}">▶️ 播放</a>
-                        <button onclick="getAIResource(this)" class="bg-pink-100 text-pink-500 px-2 py-1 rounded-full text-[10px] hover:bg-pink-200">AI 找片</button>
+                        <button onclick="getAIResource(this)" class="bg-pink-100 text-pink-500 px-2 py-1 rounded-full text-[10px] hover:bg-pink-200 font-bold">AI 找片</button>
                     </div>
                 </td>
             `;
             tbody.appendChild(row);
         }
 
-        // --- 功能 1：AI 生成活動指南 (互動遊戲、作業) ---
+        // --- 功能 1：AI 生成活動指南 (加入年齡參數) ---
         window.getActivityGuide = async function(btn) {
             checkKey();
             const taskName = btn.previousElementSibling.value;
-            if(!taskName) return alert('請先輸入或生成活動內容');
+            const age = ageSelect.value;
+            if(!taskName) return alert('請先輸入行程內容');
 
             const guideBox = document.getElementById('guideBox');
             const guideContent = document.getElementById('guideContent');
             guideBox.classList.remove('hidden');
-            guideContent.innerHTML = "🧙 AI 正在思考最適合的遊戲與練習...";
+            guideContent.innerHTML = `🧙 AI 正在為 ${age} 寶貝量身打造指南...`;
 
             try {
                 const proxyUrl = 'https://corsproxy.io/?';
@@ -95,25 +97,64 @@
                         model: "gpt-3.5-turbo",
                         messages: [{
                             role: "user", 
-                            content: `針對活動「${taskName}」，請提供具體的育兒建議：
-                            1. 推薦一個簡單的互動遊戲。
-                            2. 建議一個可以完成的小作業或練習。
-                            3. 家長可以引導孩子的一句話。
-                            請用繁體中文，條列式回覆。`
+                            content: `針對一位 ${age} 的孩子，進行「${taskName}」活動時，請提供具體建議：
+                            1. 適合該年齡的互動遊戲方式。
+                            2. 適合該年齡的小練習或作業。
+                            3. 家長引導的核心關鍵字。
+                            請用繁體中文，精簡條列。`
                         }]
                     })
                 });
                 const result = await response.json();
                 guideContent.innerHTML = result.choices[0].message.content.replace(/\n/g, '<br>');
+                // 將指南暫存，方便找片時使用
+                btn.dataset.lastGuide = result.choices[0].message.content.substring(0, 50); 
             } catch (e) {
                 guideContent.innerHTML = "失敗了：" + e.message;
             }
         }
 
-        // --- 原有功能：生成作息建議 ---
+        // --- 功能 2：AI 找片 (結合年齡與指南) ---
+        window.getAIResource = async function(btn) {
+            checkKey();
+            const row = btn.closest('tr');
+            const taskName = row.querySelector('.task-input').value;
+            const age = ageSelect.value;
+            const guideHint = row.querySelector('button[onclick="getActivityGuide(this)"]').dataset.lastGuide || "";
+            
+            btn.innerText = "⏳";
+            try {
+                const proxyUrl = 'https://corsproxy.io/?';
+                const apiUrl = 'https://api.openai.com/v1/chat/completions';
+                const response = await fetch(proxyUrl + encodeURIComponent(apiUrl), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENAI_KEY}` },
+                    body: JSON.stringify({
+                        model: "gpt-3.5-turbo",
+                        messages: [{
+                            role: "user", 
+                            content: `請幫我找一個適合 ${age} 小孩看，關於「${taskName}」的影片連結。參考重點：${guideHint}。
+                            規則：只准回傳 YouTube 網址。如果找不到，請給我這個搜尋連結：https://www.youtube.com/results?search_query=${encodeURIComponent(age + " " + taskName)}`
+                        }],
+                        temperature: 0.3
+                    })
+                });
+                const result = await response.json();
+                const urlMatch = result.choices[0].message.content.match(/https?:\/\/[^\s]+/);
+                if (urlMatch) {
+                    const linkElem = btn.parentElement.querySelector('a');
+                    linkElem.href = urlMatch[0];
+                    linkElem.innerText = "▶️ 播放";
+                    linkElem.classList.remove('hidden');
+                }
+            } catch (e) { console.error(e); }
+            btn.innerText = "AI 找片";
+        }
+
         window.generateDailyPlan = async function(mode) {
             checkKey();
             const btn = event.target;
+            const age = ageSelect.value;
             btn.innerText = "規劃中...";
             try {
                 const proxyUrl = 'https://corsproxy.io/?';
@@ -125,7 +166,7 @@
                         model: "gpt-3.5-turbo",
                         messages: [{
                             role: "user", 
-                            content: `幫我規劃女兒的「${mode}」作息。從08:00到20:00，每2小時一項。格式：時間|活動名稱。不要廢話。`
+                            content: `規劃一位 ${age} 孩子的「${mode}」作息。從08:00開始到20:00，每2小時一項。格式：時間|活動。不要廢話。`
                         }]
                     })
                 });
@@ -138,35 +179,7 @@
                     if(time && task) addRow({ time: time.trim(), task: task.trim(), status: '尚未開始', url: '' });
                 });
             } catch (e) { alert(e.message); }
-            btn.innerText = mode === '雙語生活模式' ? '🎧 雙語生活' : '🧠 邏輯思考';
-        }
-
-        // 找 YouTube 片
-        window.getAIResource = async function(btn) {
-            checkKey();
-            const taskName = btn.closest('tr').querySelector('.task-input').value;
-            btn.innerText = "...";
-            try {
-                const proxyUrl = 'https://corsproxy.io/?';
-                const apiUrl = 'https://api.openai.com/v1/chat/completions';
-                const response = await fetch(proxyUrl + encodeURIComponent(apiUrl), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENAI_KEY}` },
-                    body: JSON.stringify({
-                        model: "gpt-3.5-turbo",
-                        messages: [{role: "user", content: `給一個關於「${taskName}」的YouTube連結。只給網址。`}]
-                    })
-                });
-                const result = await response.json();
-                const urlMatch = result.choices[0].message.content.match(/https?:\/\/[^\s]+/);
-                if (urlMatch) {
-                    const linkElem = btn.parentElement.querySelector('a');
-                    linkElem.href = urlMatch[0];
-                    linkElem.innerText = "▶️ 播放";
-                    linkElem.classList.remove('hidden');
-                }
-            } catch (e) {}
-            btn.innerText = "AI 找片";
+            btn.innerText = mode === '雙語生活' ? '🎧 雙語生活' : '🧠 邏輯思考';
         }
 
         window.saveData = async function() {
@@ -189,24 +202,37 @@
 <body class="bg-pink-50 min-h-screen p-4 pb-20">
     <div class="max-w-4xl mx-auto bg-white p-6 rounded-[2.5rem] shadow-2xl border-4 border-pink-200">
         <header class="text-center mb-6">
-            <h1 class="text-3xl font-black text-pink-500 mb-4">🌸 女兒成長管家 v3.0</h1>
+            <h1 class="text-3xl font-black text-pink-500 mb-4">🌸 寶貝成長導師 v4.0</h1>
+            
+            <div class="mb-4 inline-block bg-pink-100 px-4 py-2 rounded-2xl">
+                <label class="text-pink-600 font-bold text-sm mr-2">👧 寶貝年齡：</label>
+                <select id="ageSelect" class="bg-white border-none rounded-lg text-sm text-pink-500 font-bold focus:ring-0">
+                    <option value="1歲">1 歲</option>
+                    <option value="2歲">2 歲</option>
+                    <option value="3歲" selected>3 歲</option>
+                    <option value="4歲">4 歲</option>
+                    <option value="5歲">5 歲</option>
+                    <option value="6歲+">6 歲以上</option>
+                </select>
+            </div>
+
             <div class="flex justify-center gap-2">
-                <button onclick="generateDailyPlan('雙語生活模式')" class="bg-blue-400 text-white px-4 py-2 rounded-full text-xs font-bold hover:bg-blue-500 shadow-md transition">🎧 雙語生活</button>
-                <button onclick="generateDailyPlan('邏輯思考模式')" class="bg-purple-400 text-white px-4 py-2 rounded-full text-xs font-bold hover:bg-purple-500 shadow-md transition">🧠 邏輯思考</button>
+                <button onclick="generateDailyPlan('雙語生活')" class="bg-blue-400 text-white px-4 py-2 rounded-full text-xs font-bold hover:bg-blue-500 shadow-md">🎧 雙語生活</button>
+                <button onclick="generateDailyPlan('邏輯思考')" class="bg-purple-400 text-white px-4 py-2 rounded-full text-xs font-bold hover:bg-purple-500 shadow-md">🧠 邏輯思考</button>
             </div>
         </header>
 
-        <div id="guideBox" class="hidden mb-6 p-4 bg-orange-50 border-2 border-orange-200 rounded-2xl relative">
+        <div id="guideBox" class="hidden mb-6 p-4 bg-orange-50 border-2 border-orange-200 rounded-2xl relative shadow-inner">
             <button onclick="document.getElementById('guideBox').classList.add('hidden')" class="absolute top-2 right-3 text-orange-400 font-bold">✕</button>
-            <h3 class="font-bold text-orange-600 mb-2 flex items-center">✨ AI 育兒指南：</h3>
+            <h3 class="font-bold text-orange-600 mb-2 flex items-center text-sm">✨ 分齡教育指南：</h3>
             <div id="guideContent" class="text-xs text-gray-700 leading-relaxed"></div>
         </div>
         
         <div class="flex items-center justify-between mb-4 gap-4">
-            <input type="date" id="datePicker" class="border-2 border-pink-100 rounded-xl px-3 py-2 text-sm">
+            <input type="date" id="datePicker" class="border-2 border-pink-100 rounded-xl px-3 py-2 text-sm text-gray-500">
             <div class="flex gap-1">
-                <button onclick="addRow()" class="bg-pink-300 text-white px-3 py-2 rounded-xl text-xs font-bold">＋新增</button>
-                <button onclick="saveData()" class="bg-green-500 text-white px-3 py-2 rounded-xl text-xs font-bold shadow-md">💾 儲存</button>
+                <button onclick="addRow()" class="bg-pink-300 text-white px-3 py-2 rounded-xl text-xs font-bold">＋手動新增</button>
+                <button onclick="saveData()" class="bg-green-500 text-white px-3 py-2 rounded-xl text-xs font-bold shadow-md">💾 儲存同步</button>
             </div>
         </div>
 
@@ -214,14 +240,18 @@
             <table class="w-full text-left">
                 <thead class="bg-pink-400 text-white text-[10px] uppercase">
                     <tr>
-                        <th class="p-3 w-24">時間</th>
-                        <th class="p-3">活動與建議</th>
-                        <th class="p-3 w-28">達成</th>
-                        <th class="p-3 w-20 text-center">影片</th>
+                        <th class="p-3 w-28 text-center">預計時間</th>
+                        <th class="p-3">分齡活動計畫</th>
+                        <th class="p-3 w-28 text-center">執行狀況</th>
+                        <th class="p-3 w-20 text-center">推薦影片</th>
                     </tr>
                 </thead>
                 <tbody id="scheduleBody" class="text-xs"></tbody>
             </table>
+        </div>
+        
+        <div class="mt-6 text-center text-gray-300 text-[10px]">
+            提示：先點擊「💡 育兒指南」讓 AI 了解活動細節，找片會更精準喔！
         </div>
     </div>
 </body>
